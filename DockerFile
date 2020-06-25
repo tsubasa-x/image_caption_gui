@@ -1,0 +1,8 @@
+FROM ubuntu:18.04
+RUN apt-get update && apt-get upgrade -y \
+		python3-pip \
+		python3-tk
+
+ADD . /content
+
+RUN pip3 install -r requirements.txt
