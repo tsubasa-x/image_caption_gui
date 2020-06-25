@@ -1,11 +1,7 @@
-# -*- coding: utf-8 -*-
+from threading import Thread
 
-# Form implementation generated from reading ui file '/tmp/designerfH8545.ui'
-#
-# Created by: PyQt5 UI code generator 5.14.2
-#
-# WARNING! All changes made in this file will be lost!
-
+from matplotlib import pyplot as plt
+import numpy as np
 import tempfile
 import tensorflow as tf
 import matplotlib as mpl
@@ -16,11 +12,12 @@ from pygame import mixer
 import sys
 import warnings
 import logging
-
+from PIL import Image
 import pickle
 from hanziconv import HanziConv
 
 from IPython.display import Audio  # Import Audio method from IPython's Display Class
+
 tf.enable_eager_execution()
 
 # mpl.use('TkAgg')
@@ -45,8 +42,10 @@ def load_image(image_path):
 
 image_model = tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')
 new_input = image_model.input
+
 hidden_layer = image_model.layers[-1].output
 image_features_extract_model = tf.keras.Model(new_input, hidden_layer)
+
 
 # image_features_extract_model.summary()
 
@@ -167,21 +166,22 @@ def loss_function(real, pred):
     return tf.reduce_mean(loss_)
 
 
-# def plot_attention(image, result, attention_plot):
-#     temp_image = np.array(Image.open(image))
-#
-#     fig = plt.figure(figsize=(10, 10))
-#
-#     len_result = len(result)
-#     for l in range(len_result):
-#         temp_att = np.resize(attention_plot[l], (8, 8))
-#         ax = fig.add_subplot(len_result // 2, len_result // 2, l + 1)
-#         ax.set_title(result[l])
-#         img = ax.imshow(temp_image)
-#         ax.imshow(temp_att, cmap='gray', alpha=0.6, extent=img.get_extent())
-#
-#     plt.tight_layout()
-#     plt.show()
+def plot_attention(image, result, attention_plot):
+    temp_image = np.array(Image.open(image))
+
+    fig = plt.figure(figsize=(10, 10))
+
+    len_result = len(result)
+    for l in range(len_result):
+        temp_att = np.resize(attention_plot[l], (8, 8))
+        ax = fig.add_subplot(len_result // 2 + 1, len_result // 2, l + 1)
+        ax.set_title(result[l])
+        img = ax.imshow(temp_image)
+        ax.imshow(temp_att, cmap='gray', alpha=0.6, extent=img.get_extent())
+
+    plt.tight_layout()
+    plt.show()
+
 
 #
 # def image_plot(image):
@@ -232,8 +232,9 @@ def predict(train_captions_path, checkpoint_path, Image_path):
                                optimizer=optimizer)
     ckpt.restore(checkpoint_path)
 
+    # attention_plot = None
     def evaluate(image):
-        # attention_plot = np.zeros((max_length, attention_features_shape))
+        attention_plot = np.zeros((max_length, attention_features_shape))
 
         hidden = decoder.reset_state(batch_size=1)
 
@@ -249,42 +250,46 @@ def predict(train_captions_path, checkpoint_path, Image_path):
         for i in range(max_length):
             predictions, hidden, attention_weights = decoder(dec_input, features, hidden)
 
-            # attention_plot[i] = tf.reshape(attention_weights, (-1,)).numpy()
+            attention_plot[i] = tf.reshape(attention_weights, (-1,)).numpy()
 
             predicted_id = tf.argmax(predictions[0]).numpy()
             result.append(tokenizer.index_word[predicted_id])
 
             if tokenizer.index_word[predicted_id] == '<end>':
-                return result
+                attention_plot = attention_plot[:len(result), :]
+
+                return result, attention_plot
 
             dec_input = tf.expand_dims([predicted_id], 0)
 
-        # attention_plot = attention_plot[:len(result), :]
-        return result
+        attention_plot = attention_plot[:len(result), :]
+
+        return result, attention_plot
 
     new_img = Image_path
 
-    result = evaluate(new_img)
+    result, my_att_plt = evaluate(new_img)
+    # Thread(plot_attention, args=(new_img, result, my_att_plt))
+    plot_attention(new_img, result, my_att_plt)
     for i in result:
         if i == "<unk>":
             result.remove(i)
         else:
             pass
 
+    # plot_attention(new_img, result, attention_plot)
+
     # print('I guess: ', ' '.join(result).rsplit(' ', 1)[0])
 
     # image_plot(new_img)
 
     # real_caption = ' '.join(result).rsplit(' ', 1)[0]
-    # plot_attention(new_img, result, attention_plot)
+    #
 
     # tts = gTTS(' '.join(result).rsplit(' ', 1)[0])
     # tts.save('1.mp3')
     # sound_file = './1.mp3'
     return ''.join(result)[:-5]
-
-
-
 
 
 def speak(text):
@@ -295,11 +300,13 @@ def speak(text):
         mixer.music.load('{}.mp3'.format(fp.name))
         mixer.music.play()
 
+
 def retranslateUi(Window):
     _translate = QtCore.QCoreApplication.translate
     Window.setWindowTitle(_translate("Window", "Chinese Image Caption"))
     # win.open_image_button.setText(_translate("Window", "開啟圖片"))
     win.generate_caption_button.setText(_translate("Window", "生成句子"))
+
 
 def open_img():
     win.dlg = QFileDialog()
@@ -315,6 +322,7 @@ def open_img():
         win.scaled_img = win.img.scaled(800, 370, QtCore.Qt.KeepAspectRatio)
         win.show_picture.setPixmap(QtGui.QPixmap(win.scaled_img))
         win.img_shown = 1
+
 
 def generate():
     if win.img_shown is 0:
@@ -419,4 +427,3 @@ win.generate_caption_button.clicked.connect(generate)
 
 win.show()
 sys.exit(app.exec_())
-
